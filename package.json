@@ -1,0 +1,28 @@
+{
+  "name": "pdip-quad",
+  "version": "0.0.1",
+  "description": "Pure JavaScript quadratic programming solver using primal dual interior point algorithms",
+  "main": "index.js",
+  "scripts": {
+    "test": "gulp test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/likr/pdip-quad.git"
+  },
+  "author": "Yosuke ONOUE <onoue@likr-lab.com>",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/likr/pdip-quad/issues"
+  },
+  "homepage": "https://github.com/likr/pdip-quad",
+  "devDependencies": {
+    "expect.js": "^0.3.1",
+    "gulp": "^3.8.11",
+    "gulp-mocha": "^2.0.0",
+    "gulp-watch": "^4.2.0"
+  },
+  "dependencies": {
+    "linalg-asm": "git://github.com/likr/linalg-asm"
+  }
+}
