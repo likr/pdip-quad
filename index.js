@@ -55,11 +55,15 @@ module.exports = function pdipQuad(n, m) {
     solve: solve
   };
 
-  function solve() {
+  function solve(options) {
+    options = options || {};
     var i, j, l = wLength;
-    var mu = 0.8,
-        gamma = 0.5,
-        loopStop = 50;
+    var mu = options.mu || 0.8,
+        muMin = options.muMin || 1e-10,
+        gamma = options.gamma || 0.5,
+        M = options.M || 2,
+        rho = options.rho || 100,
+        xi = options.xi || 0.9;
 
     for (i = 0; i < n; ++i) {
       x[i] = 1;
@@ -67,7 +71,7 @@ module.exports = function pdipQuad(n, m) {
       z[i] = 1;
     }
 
-    for (var loop = 0; loop < loopStop; ++loop, mu *= gamma) {
+    for (var loop = 0; mu > muMin; ++loop, mu *= gamma) {
       do {
         //         Q  -A^t -I
         // J := ( -A   O    O   )
@@ -104,7 +108,7 @@ module.exports = function pdipQuad(n, m) {
           rZ[i] = mu - x[i] * z[i];
         }
 
-        if (linalg.ddot(r.length, r.byteOffset, 1, r.byteOffset, 1) < mu) {
+        if (linalg.ddot(r.length, r.byteOffset, 1, r.byteOffset, 1) < mu * M) {
           break;
         }
 
@@ -124,9 +128,10 @@ module.exports = function pdipQuad(n, m) {
         alpha *= 0.99;
 
         // Armijo condition
-        var rho = 100,
-            xi = 0.1;
         var px = p(mu, rho), dpx = dp(mu, rho);
+        if (dpx > 0) {
+          break;
+        }
         linalg.daxpy(n, alpha, rX.byteOffset, 1, x.byteOffset, 1);
         linalg.daxpy(m, alpha, rY.byteOffset, 1, y.byteOffset, 1);
         linalg.daxpy(n, alpha, rZ.byteOffset, 1, z.byteOffset, 1);

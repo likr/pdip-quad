@@ -18,10 +18,10 @@ describe('pdip', function() {
     solver.b().set([-0.5, 1, -3]);
     solver.c().set([-2, -4, 0, 0, 0]);
 
-    var result = solver.solve(1);
+    var result = solver.solve();
 
-    expect(+result.x[0].toFixed(10)).to.be(1);
-    expect(+result.x[1].toFixed(10)).to.be(0);
+    expect(+result.x[0].toFixed(4)).to.be(1);
+    expect(+result.x[1].toFixed(4)).to.be(0);
   });
 
   it('solves max. x^t Q x / 2 + c^t x s.t. A x = b, x >= 0', function() {
@@ -39,7 +39,7 @@ describe('pdip', function() {
     solver.b().set([2, 2, 3]);
     solver.c().set([-2, -6, 0, 0, 0]);
 
-    var result = solver.solve(1);
+    var result = solver.solve();
 
     expect(+result.x[0].toFixed(4)).to.be(0.6667);
     expect(+result.x[1].toFixed(4)).to.be(1.3333);
@@ -54,7 +54,7 @@ describe('pdip', function() {
     solver.b().set([10]);
     solver.c().set([-1, -2]);
 
-    var result = solver.solve(1);
+    var result = solver.solve();
 
     expect(+result.x[0].toFixed(4)).to.be(1.5);
     expect(+result.x[1].toFixed(4)).to.be(2.3333);
@@ -69,9 +69,9 @@ describe('pdip', function() {
     solver.b().set([10, 12]);
     solver.c().set([-1, -2]);
 
-    var result = solver.solve(1);
+    var result = solver.solve();
 
-    expect(+result.x[0].toFixed(10)).to.be(2.75);
-    expect(+result.x[1].toFixed(10)).to.be(1.5);
+    expect(+result.x[0].toFixed(4)).to.be(2.75);
+    expect(+result.x[1].toFixed(4)).to.be(1.5);
   });
 });
