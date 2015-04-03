@@ -11,14 +11,15 @@ module.exports = function pdipQuad(n, m) {
       xLength = n,
       yLength = m,
       zLength = n,
+      xyLength = xLength + yLength,
       wLength = xLength + yLength + zLength,
-      JLength = wLength * wLength,
+      JLength = xyLength * xyLength,
       rLength = wLength,
       rXLength = xLength,
       rYLength = yLength,
       rZLength = zLength,
       floatLength = QLength + ALength + bLength + cLength + wLength + JLength + rLength,
-      ipivLength = Math.ceil(wLength / 2) * 2,
+      ipivLength = Math.ceil((xLength + yLength) / 2) * 2,
       heap = new ArrayBuffer(calcBufferSize(floatLength * floatBytes + ipivLength * uintBytes)),
       Q = new Float64Array(heap, 0, QLength),
       A = new Float64Array(heap, Q.byteOffset + Q.byteLength, ALength),
@@ -57,7 +58,7 @@ module.exports = function pdipQuad(n, m) {
 
   function solve(options) {
     options = options || {};
-    var i, j, l = wLength;
+    var i, j;
     var mu = options.mu || 0.8,
         muMin = options.muMin || 1e-10,
         gamma = options.gamma || 0.5,
@@ -92,28 +93,32 @@ module.exports = function pdipQuad(n, m) {
           break;
         }
 
-        //         Q  -A^t -I
-        // J := ( -A   O    O   )
-        //         Z_0 O    X_0
-        for (i = 0; i < l; ++i) {
-          for (j = 0; j < l; ++j) {
-            J[i * l + j] = 0;
+        // J := (  Q-X^(-1)Z  -A^t )
+        //        -A           O
+        // r_x := r_x - X ^ -1 r_z
+        for (i = 0; i < xyLength; ++i) {
+          for (j = 0; j < xyLength; ++j) {
+            J[i * xyLength + j] = 0;
           }
         }
         for (i = 0; i < n; ++i) {
           for (j = 0; j < n; ++j) {
-            J[i * l + j] = Q[i * n + j];
+            J[i * xyLength + j] = Q[i * n + j];
           }
           for (j = 0; j < m; ++j) {
-            J[(j + n) * l + i] = J[i * l + j + n] = -A[j * n + i];
+            J[(j + n) * xyLength + i] = J[i * xyLength + j + n] = -A[j * n + i];
           }
-          J[i * l + n + m + i] = -1;
-          J[(n + m + i) * l + i] = z[i];
-          J[(n + m + i) * l + n + m + i] = x[i];
+          J[i * xyLength + i] += z[i] / x[i];
+          rX[i] += rZ[i] / x[i];
         }
 
         // solve J dw = r
-        linalg.dgesv(l, 1, J.byteOffset, l, ipiv.byteOffset, r.byteOffset, 1);
+        linalg.dgesv(xyLength, 1, J.byteOffset, xyLength, ipiv.byteOffset, r.byteOffset, 1);
+
+        // dz = X^-1 (Z dx - r_z)
+        for (i = 0; i < n; ++i) {
+          rZ[i] = (rZ[i] - z[i] * rX[i]) / x[i];
+        }
 
         // Find alpha_x and alpha_z
         var alpha = 1;
@@ -132,7 +137,6 @@ module.exports = function pdipQuad(n, m) {
         if (dpx > 0) {
           break;
         }
-        console.log(dpx);
         var px = p(mu, rho);
         linalg.daxpy(n, alpha, rX.byteOffset, 1, x.byteOffset, 1);
         for (var k = 1; !(p(mu, rho) <= px + xi * alpha * Math.pow(gamma, k) * dpx) && k < 100; ++k) {
