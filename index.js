@@ -19,7 +19,7 @@ module.exports = function pdipQuad(n, m) {
       rZLength = zLength,
       floatLength = QLength + ALength + bLength + cLength + wLength + JLength + rLength,
       ipivLength = Math.ceil(wLength / 2) * 2,
-      heap = new ArrayBuffer(floatLength * floatBytes + ipivLength * uintBytes),
+      heap = new ArrayBuffer(calcBufferSize(floatLength * floatBytes + ipivLength * uintBytes)),
       Q = new Float64Array(heap, 0, QLength),
       A = new Float64Array(heap, Q.byteOffset + Q.byteLength, ALength),
       b = new Float64Array(heap, A.byteOffset + A.byteLength, bLength),
@@ -203,5 +203,13 @@ module.exports = function pdipQuad(n, m) {
       val += rho * (Math.abs(gjx + ax) - Math.abs(gjx));
     }
     return val;
+  }
+
+  function calcBufferSize(s) {
+    var l = 1;
+    while (l < s) {
+      l <<= 1;
+    }
+    return l;
   }
 };
