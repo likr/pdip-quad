@@ -72,7 +72,26 @@ module.exports = function pdipQuad(n, m) {
     }
 
     for (var loop = 0; mu > muMin; ++loop, mu *= gamma) {
-      do {
+      for (;;) {
+        // r_x := A ^ t y + z - Q x - c
+        linalg.dcopy(n, z.byteOffset, 1, rX.byteOffset, 1);
+        linalg.daxpy(n, -1, c.byteOffset, 1, rX.byteOffset, 1);
+        linalg.dgemv(0, n, n, -1, Q.byteOffset, n, x.byteOffset, 1, 1, rX.byteOffset, 1);
+        linalg.dgemv(1, m, n, 1, A.byteOffset, n, y.byteOffset, 1, 1, rX.byteOffset, 1);
+
+        // r_y := A x - b
+        linalg.dcopy(n, b.byteOffset, 1, rY.byteOffset, 1);
+        linalg.dgemv(0, m, n, 1, A.byteOffset, n, x.byteOffset, 1, -1, rY.byteOffset, 1);
+
+        // r_z := mu e - X Z e
+        for (i = 0; i < n; ++i) {
+          rZ[i] = mu - x[i] * z[i];
+        }
+
+        if (linalg.ddot(r.length, r.byteOffset, 1, r.byteOffset, 1) < mu * M) {
+          break;
+        }
+
         //         Q  -A^t -I
         // J := ( -A   O    O   )
         //         Z_0 O    X_0
@@ -93,25 +112,6 @@ module.exports = function pdipQuad(n, m) {
           J[(n + m + i) * l + n + m + i] = x[i];
         }
 
-        // r_x := A ^ t y + z - Q x - c
-        linalg.dcopy(n, z.byteOffset, 1, rX.byteOffset, 1);
-        linalg.daxpy(n, -1, c.byteOffset, 1, rX.byteOffset, 1);
-        linalg.dgemv(0, n, n, -1, Q.byteOffset, n, x.byteOffset, 1, 1, rX.byteOffset, 1);
-        linalg.dgemv(1, m, n, 1, A.byteOffset, n, y.byteOffset, 1, 1, rX.byteOffset, 1);
-
-        // r_y := A x - b
-        linalg.dcopy(n, b.byteOffset, 1, rY.byteOffset, 1);
-        linalg.dgemv(0, m, n, 1, A.byteOffset, n, x.byteOffset, 1, -1, rY.byteOffset, 1);
-
-        // r_z := mu e - X Z e
-        for (i = 0; i < n; ++i) {
-          rZ[i] = mu - x[i] * z[i];
-        }
-
-        if (linalg.ddot(r.length, r.byteOffset, 1, r.byteOffset, 1) < mu * M) {
-          break;
-        }
-
         // solve J dw = r
         linalg.dgesv(l, 1, J.byteOffset, l, ipiv.byteOffset, r.byteOffset, 1);
 
@@ -128,19 +128,19 @@ module.exports = function pdipQuad(n, m) {
         alpha *= 0.99;
 
         // Armijo condition
-        var px = p(mu, rho), dpx = dp(mu, rho);
+        var dpx = dp(mu, rho);
         if (dpx > 0) {
           break;
         }
+        console.log(dpx);
+        var px = p(mu, rho);
         linalg.daxpy(n, alpha, rX.byteOffset, 1, x.byteOffset, 1);
-        linalg.daxpy(m, alpha, rY.byteOffset, 1, y.byteOffset, 1);
-        linalg.daxpy(n, alpha, rZ.byteOffset, 1, z.byteOffset, 1);
-        for (var k = 1; !(p(mu, rho) <= px + xi * Math.pow(gamma, k) * dpx) && k < 100; ++k) {
+        for (var k = 1; !(p(mu, rho) <= px + xi * alpha * Math.pow(gamma, k) * dpx) && k < 100; ++k) {
           linalg.daxpy(n, alpha * Math.pow(gamma, k) * (gamma - 1), rX.byteOffset, 1, x.byteOffset, 1);
-          linalg.daxpy(m, alpha * Math.pow(gamma, k) * (gamma - 1), rY.byteOffset, 1, y.byteOffset, 1);
-          linalg.daxpy(n, alpha * Math.pow(gamma, k) * (gamma - 1), rZ.byteOffset, 1, z.byteOffset, 1);
         }
-      } while (linalg.ddot(r.length, r.byteOffset, 1, r.byteOffset, 1) > mu)
+        linalg.daxpy(m, alpha * Math.pow(gamma, k - 1), rY.byteOffset, 1, y.byteOffset, 1);
+        linalg.daxpy(n, alpha * Math.pow(gamma, k - 1), rZ.byteOffset, 1, z.byteOffset, 1);
+      }
     }
 
     return {
