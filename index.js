@@ -37,6 +37,15 @@ module.exports = function pdipQuad(n, m) {
       rZ = new Float64Array(heap, rY.byteOffset + rY.byteLength, rZLength),
       linalg = linalgModule(global, null, heap);
 
+  (function() {
+    var i;
+    for (i = 0; i < n; ++i) {
+      x[i] = 1;
+      y[i] = 0;
+      z[i] = 1;
+    }
+  })();
+
   return {
     q: function() {
       return Q;
@@ -65,12 +74,6 @@ module.exports = function pdipQuad(n, m) {
         M = options.M || 2,
         rho = options.rho || 100,
         xi = options.xi || 0.9;
-
-    for (i = 0; i < n; ++i) {
-      x[i] = 1;
-      y[i] = 0;
-      z[i] = 1;
-    }
 
     for (var loop = 0; mu > muMin; ++loop, mu *= gamma) {
       for (;;) {

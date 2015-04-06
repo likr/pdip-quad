@@ -74,4 +74,20 @@ describe('pdip', function() {
     expect(+result.x[0].toFixed(4)).to.be(2.75);
     expect(+result.x[1].toFixed(4)).to.be(1.5);
   });
+
+  it('solves max. x^t Q x / 2 + c^t x s.t. A x = b, x >= 0 with initial solution', function() {
+    var n = 2, m = 1;
+
+    var solver = pdip(n, m);
+    solver.q().set([2, 1, 1, 3]);
+    solver.a().set([2, 3]);
+    solver.b().set([10]);
+    solver.c().set([-1, -2]);
+    solver.w().set([1.5, 2.3333, 0, 1, 1]);
+
+    var result = solver.solve();
+
+    expect(+result.x[0].toFixed(4)).to.be(1.5);
+    expect(+result.x[1].toFixed(4)).to.be(2.3333);
+  });
 });
