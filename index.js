@@ -67,7 +67,7 @@ module.exports = function pdipQuad(n, m) {
 
   function solve(options) {
     options = options || {};
-    var i, j;
+    var i, j, feasible = false;
     var mu = options.mu || 0.8,
         muMin = options.muMin || 1e-10,
         gamma = options.gamma || 0.5,
@@ -78,23 +78,42 @@ module.exports = function pdipQuad(n, m) {
 
     for (var loop = 0; mu > muMin; ++loop, mu *= gamma) {
       for (;;) {
-        // r_x := A ^ t y + z - Q x - c
-        linalg.dcopy(n, z.byteOffset, 1, rX.byteOffset, 1);
-        linalg.daxpy(n, -1, c.byteOffset, 1, rX.byteOffset, 1);
-        linalg.dgemv(0, n, n, -1, Q.byteOffset, n, x.byteOffset, 1, 1, rX.byteOffset, 1);
-        linalg.dgemv(1, m, n, 1, A.byteOffset, n, y.byteOffset, 1, 1, rX.byteOffset, 1);
-
-        // r_y := A x - b
-        linalg.dcopy(n, b.byteOffset, 1, rY.byteOffset, 1);
-        linalg.dgemv(0, m, n, 1, A.byteOffset, n, x.byteOffset, 1, -1, rY.byteOffset, 1);
-
         // r_z := mu e - X Z e
         for (i = 0; i < n; ++i) {
           rZ[i] = mu - x[i] * z[i];
         }
 
-        if (linalg.ddot(r.length, r.byteOffset, 1, r.byteOffset, 1) < mu * M) {
-          break;
+        if (feasible) {
+          if (linalg.ddot(rZ.length, rZ.byteOffset, 1, rZ.byteOffset, 1) < mu * M) {
+            break;
+          }
+
+          // r_x := O
+          for (i = 0; i < n; ++i) {
+            rX[i] = 0;
+          }
+
+          // r_y := O
+          for (i = 0; i < m; ++i) {
+            rY[i] = 0;
+          }
+        } else {
+          // r_x := A ^ t y + z - Q x - c
+          linalg.dcopy(n, z.byteOffset, 1, rX.byteOffset, 1);
+          linalg.daxpy(n, -1, c.byteOffset, 1, rX.byteOffset, 1);
+          linalg.dgemv(0, n, n, -1, Q.byteOffset, n, x.byteOffset, 1, 1, rX.byteOffset, 1);
+          linalg.dgemv(1, m, n, 1, A.byteOffset, n, y.byteOffset, 1, 1, rX.byteOffset, 1);
+
+          // r_y := A x - b
+          linalg.dcopy(m, b.byteOffset, 1, rY.byteOffset, 1);
+          linalg.dgemv(0, m, n, 1, A.byteOffset, n, x.byteOffset, 1, -1, rY.byteOffset, 1);
+
+          if (linalg.ddot(rX.length, rX.byteOffset, 1, rX.byteOffset, 1) + linalg.ddot(rY.length, rY.byteOffset, 1, rY.byteOffset, 1) < 1e-13) {
+            feasible = true;
+          }
+          if (linalg.ddot(r.length, r.byteOffset, 1, r.byteOffset, 1) < mu * M) {
+            break;
+          }
         }
 
         // J := (  Q-X^(-1)Z  -A^t )
