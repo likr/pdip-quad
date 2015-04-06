@@ -73,6 +73,7 @@ module.exports = function pdipQuad(n, m) {
         gamma = options.gamma || 0.5,
         M = options.M || 2,
         rho = options.rho || 100,
+        tau = options.tau || 0.8,
         xi = options.xi || 0.9;
 
     for (var loop = 0; mu > muMin; ++loop, mu *= gamma) {
@@ -142,11 +143,11 @@ module.exports = function pdipQuad(n, m) {
         }
         var px = p(mu, rho);
         linalg.daxpy(n, alpha, rX.byteOffset, 1, x.byteOffset, 1);
-        for (var k = 1; !(p(mu, rho) <= px + xi * alpha * Math.pow(gamma, k) * dpx) && k < 100; ++k) {
-          linalg.daxpy(n, alpha * Math.pow(gamma, k) * (gamma - 1), rX.byteOffset, 1, x.byteOffset, 1);
+        for (var k = 1; !(p(mu, rho) <= px + xi * alpha * Math.pow(tau, k) * dpx) && k < 100; ++k) {
+          linalg.daxpy(n, alpha * Math.pow(tau, k) * (tau - 1), rX.byteOffset, 1, x.byteOffset, 1);
         }
-        linalg.daxpy(m, alpha * Math.pow(gamma, k - 1), rY.byteOffset, 1, y.byteOffset, 1);
-        linalg.daxpy(n, alpha * Math.pow(gamma, k - 1), rZ.byteOffset, 1, z.byteOffset, 1);
+        linalg.daxpy(m, alpha * Math.pow(tau, k - 1), rY.byteOffset, 1, y.byteOffset, 1);
+        linalg.daxpy(n, alpha * Math.pow(tau, k - 1), rZ.byteOffset, 1, z.byteOffset, 1);
       }
     }
 
