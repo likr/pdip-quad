@@ -2,65 +2,58 @@ var linalgModule = require('linalg-asm');
 
 module.exports = function pdipQuad(n, m) {
   'use strict';
-  var uintBytes = 4,
-      floatBytes = 8,
-      QLength = n * n,
-      ALength = n * m,
-      bLength = m,
-      cLength = n,
-      xLength = n,
-      yLength = m,
-      zLength = n,
-      xyLength = xLength + yLength,
-      wLength = xLength + yLength + zLength,
-      JLength = xyLength * xyLength,
-      rLength = wLength,
-      rXLength = xLength,
-      rYLength = yLength,
-      rZLength = zLength,
-      floatLength = QLength + ALength + bLength + cLength + wLength + JLength + rLength,
-      ipivLength = Math.ceil((xLength + yLength) / 2) * 2,
-      heap = new ArrayBuffer(calcBufferSize(floatLength * floatBytes + ipivLength * uintBytes)),
-      Q = new Float64Array(heap, 0, QLength),
-      A = new Float64Array(heap, Q.byteOffset + Q.byteLength, ALength),
-      b = new Float64Array(heap, A.byteOffset + A.byteLength, bLength),
-      c = new Float64Array(heap, b.byteOffset + b.byteLength, cLength),
-      w = new Float64Array(heap, c.byteOffset + c.byteLength, wLength),
-      J = new Float64Array(heap, w.byteOffset + w.byteLength, JLength),
-      r = new Float64Array(heap, J.byteOffset + J.byteLength, rLength),
-      ipiv = new Uint32Array(heap, r.byteOffset + r.byteLength, ipivLength),
-      x = new Float64Array(heap, w.byteOffset, xLength),
-      y = new Float64Array(heap, x.byteOffset + x.byteLength, yLength),
-      z = new Float64Array(heap, y.byteOffset + y.byteLength, zLength),
-      rX = new Float64Array(heap, r.byteOffset, rXLength),
-      rY = new Float64Array(heap, rX.byteOffset + rX.byteLength, rYLength),
-      rZ = new Float64Array(heap, rY.byteOffset + rY.byteLength, rZLength),
-      linalg = linalgModule(global, null, heap);
+
+  var memory = allocate({
+    Float64: {
+      Q: n * n,
+      A: n * m,
+      b: m,
+      c: n,
+      w: {
+        x: n,
+        y: m,
+        z: n
+      },
+      J: m * m,
+      K: m * n,
+      L: n * n,
+      r: {
+        rX: n,
+        rY: m,
+        rZ: n
+      },
+      work: n
+    },
+    Uint32: {
+      ipiv: m
+    }
+  });
+  var linalg = linalgModule(global, null, memory.heap);
 
   (function() {
     var i;
     for (i = 0; i < n; ++i) {
-      x[i] = 1;
-      y[i] = 0;
-      z[i] = 1;
+      memory.views.x[i] = 1;
+      memory.views.y[i] = 0;
+      memory.views.z[i] = 1;
     }
   })();
 
   return {
     q: function() {
-      return Q;
+      return memory.views.Q;
     },
     a: function() {
-      return A;
+      return memory.views.A;
     },
     b: function() {
-      return b;
+      return memory.views.b;
     },
     c: function() {
-      return c;
+      return memory.views.c;
     },
     w: function() {
-      return w;
+      return memory.views.w;
     },
     solve: solve
   };
@@ -68,6 +61,23 @@ module.exports = function pdipQuad(n, m) {
   function solve(options) {
     options = options || {};
     var i, j, feasible = false;
+    var A = memory.views.A,
+        b = memory.views.b,
+        c = memory.views.c,
+        Q = memory.views.Q,
+        J = memory.views.J,
+        K = memory.views.K,
+        L = memory.views.L,
+        x = memory.views.x,
+        y = memory.views.y,
+        z = memory.views.z,
+        r = memory.views.r,
+        rX = memory.views.rX,
+        rY = memory.views.rY,
+        rZ = memory.views.rZ,
+        work = memory.views.work,
+        ipiv = memory.views.ipiv;
+
     var mu = options.mu || 0.8,
         muMin = options.muMin || 1e-10,
         gamma = options.gamma || 0.5,
@@ -116,27 +126,34 @@ module.exports = function pdipQuad(n, m) {
           }
         }
 
-        // J := (  Q-X^(-1)Z  -A^t )
-        //        -A           O
-        // r_x := r_x - X ^ -1 r_z
-        for (i = 0; i < xyLength; ++i) {
-          for (j = 0; j < xyLength; ++j) {
-            J[i * xyLength + j] = 0;
-          }
-        }
+        // L := (Q + X^(-1) Z)^-1
         for (i = 0; i < n; ++i) {
           for (j = 0; j < n; ++j) {
-            J[i * xyLength + j] = Q[i * n + j];
+            L[i * n + j] = Q[i * n + j];
           }
-          for (j = 0; j < m; ++j) {
-            J[(j + n) * xyLength + i] = J[i * xyLength + j + n] = -A[j * n + i];
-          }
-          J[i * xyLength + i] += z[i] / x[i];
-          rX[i] += rZ[i] / x[i];
+          L[i * n + i] += z[i] / x[i];
         }
+        linalg.dgetrf(n, n, L.byteOffset, n, ipiv.byteOffset, n);
+        linalg.dgetri(n, L.byteOffset, n, ipiv.byteOffset, work.byteOffset, n);
+
+        // K := A L
+        linalg.dgemm(0, 0, m, n, n, 1, A.byteOffset, n, L.byteOffset, n, 0, K.byteOffset, n);
+
+        // J := K A^t
+        linalg.dgemm(0, 1, m, m, n, 1, K.byteOffset, n, A.byteOffset, n, 0, J.byteOffset, m);
+
+        // r_y := - r_y - K (r_x + X^(-1) r_z)
+        for (i = 0; i < n; ++i) {
+          work[i] = rX[i] + rZ[i] / x[i];
+        }
+        linalg.dgemv(0, m, n, -1, K.byteOffset, n, work.byteOffset, 1, -1, rY.byteOffset, 1);
 
         // solve J dw = r
-        linalg.dgesv(xyLength, 1, J.byteOffset, xyLength, ipiv.byteOffset, r.byteOffset, 1);
+        linalg.dgesv(m, 1, J.byteOffset, m, ipiv.byteOffset, rY.byteOffset, 1);
+
+        // dx := L (r_x + X^-1 r_z + A^t d_y)
+        linalg.dgemv(1, m, n, 1, A.byteOffset, n, rY.byteOffset, 1, 1, work.byteOffset, 1);
+        linalg.dgemv(0, n, n, 1, L.byteOffset, n, work.byteOffset, 1, 0, rX.byteOffset, 1);
 
         // dz = X^-1 (Z dx - r_z)
         for (i = 0; i < n; ++i) {
@@ -156,13 +173,13 @@ module.exports = function pdipQuad(n, m) {
         alpha *= 0.99;
 
         // Armijo condition
-        var dpx = dp(mu, rho);
+        var dpx = dp(n, m, A, b, c, Q, x, rX, mu, rho);
         if (dpx > 0) {
           break;
         }
-        var px = p(mu, rho);
+        var px = p(n, m, A, b, c, Q, x, mu, rho);
         linalg.daxpy(n, alpha, rX.byteOffset, 1, x.byteOffset, 1);
-        for (var k = 1; !(p(mu, rho) <= px + xi * alpha * Math.pow(tau, k) * dpx) && k < 100; ++k) {
+        for (var k = 1; !(p(n, m, A, b, c, Q, x, mu, rho) <= px + xi * alpha * Math.pow(tau, k) * dpx) && k < 100; ++k) {
           linalg.daxpy(n, alpha * Math.pow(tau, k) * (tau - 1), rX.byteOffset, 1, x.byteOffset, 1);
         }
         linalg.daxpy(m, alpha * Math.pow(tau, k - 1), rY.byteOffset, 1, y.byteOffset, 1);
@@ -175,68 +192,115 @@ module.exports = function pdipQuad(n, m) {
     };
   }
 
-  function f() {
-    var i, j, val = 0;
-    for (i = 0; i < n; ++i) {
-      for (j = 0; j < n; ++j) {
-        val += x[i] * x[j] * Q[i * n + j];
+  function allocate(arg) {
+    var totalSize = 0;
+
+    totalSize += 8 * countLength(arg.Float64);
+    totalSize += 4 * countLength(arg.Uint32);
+
+    var heap = new ArrayBuffer(calcBufferSize(totalSize)),
+        views = {};
+    allocViews(arg.Uint32, 8 * allocViews(arg.Float64, 0, Float64Array), Uint32Array);
+
+    return {
+      heap: heap,
+      views: views
+    };
+
+    function countLength(obj) {
+      var length = 0;
+      for (var name in obj) {
+        if (typeof obj[name] === 'number') {
+          length += obj[name];
+        } else {
+          length += countLength(obj[name]);
+        }
       }
+      return length;
     }
-    val /= 2;
-    for (i = 0; i < n; ++i) {
-      val += x[i] * c[i];
-    }
-    return val;
-  }
 
-  function g(i) {
-    var j, val = -b[i];
-    for (j = 0; j < n; ++j) {
-      val += x[j] * A[i * n + j];
-    }
-    return val;
-  }
-
-  function p(mu, rho) {
-    var i, val;
-    val = f();
-    for (i = 0; i < n; ++i) {
-      val -= mu * Math.log(x[i]);
-    }
-    for (i = 0; i < m; ++i) {
-      val += rho * Math.abs(g(i));
-    }
-    return val;
-  }
-
-  function dp(mu, rho) {
-    var i, j, val = 0, qx, gjx, ax;
-    for (i = 0; i < n; ++i) {
-      qx = c[i];
-      for (j = 0; j < n; ++j) {
-        qx += Q[i * n + j] * x[j];
+    function allocViews(obj, offset, TArray) {
+      var length, totalLength = 0;
+      for (var name in obj) {
+        if (typeof obj[name] === 'number') {
+          length = obj[name];
+        } else {
+          length = allocViews(obj[name], offset, TArray);
+        }
+        views[name] = new TArray(heap, offset, length);
+        offset += views[name].byteLength;
+        totalLength += length;
       }
-      val += qx * rX[i];
+      return totalLength;
     }
-    for (i = 0; i < n; ++i) {
-      val -= mu * rX[i] / x[i];
-    }
-    for (i = 0; i < m; ++i) {
-      gjx = g(i);
-      ax = 0;
-      for (j = 0; j < n; ++j) {
-        ax += A[i * n + j] * rX[j];
-      }
-      val += rho * (Math.abs(gjx + ax) - Math.abs(gjx));
-    }
-    return val;
-  }
 
-  function calcBufferSize(s) {
-    var l = 1;
-    while (l < s) {
-      l <<= 1;
+    function calcBufferSize(s) {
+      var l = 1;
+      while (l < s) {
+        l <<= 1;
+      }
+      return l;
     }
-    return l;
   }
 };
+
+function f(n, m, Q, c, x) {
+  'use strict';
+  var i, j, val = 0;
+  for (i = 0; i < n; ++i) {
+    for (j = 0; j < n; ++j) {
+      val += x[i] * x[j] * Q[i * n + j];
+    }
+  }
+  val /= 2;
+  for (i = 0; i < n; ++i) {
+    val += x[i] * c[i];
+  }
+  return val;
+}
+
+function g(n, m, A, b, x, i) {
+  'use strict';
+  var j, val = -b[i];
+  for (j = 0; j < n; ++j) {
+    val += x[j] * A[i * n + j];
+  }
+  return val;
+}
+
+function p(n, m, A, b, c, Q, x, mu, rho) {
+  'use strict';
+  var i, val;
+  val = f(n, m, Q, c, x);
+  for (i = 0; i < n; ++i) {
+    val -= mu * Math.log(x[i]);
+  }
+  for (i = 0; i < m; ++i) {
+    val += rho * Math.abs(g(n, m, A, b, x, i));
+  }
+  return val;
+}
+
+function dp(n, m, A, b, c, Q, x, rX, mu, rho) {
+  'use strict';
+  var i, j, val = 0, qx, gjx, ax;
+  for (i = 0; i < n; ++i) {
+    qx = c[i];
+    for (j = 0; j < n; ++j) {
+      qx += Q[i * n + j] * x[j];
+    }
+    val += qx * rX[i];
+  }
+  for (i = 0; i < n; ++i) {
+    val -= mu * rX[i] / x[i];
+  }
+  for (i = 0; i < m; ++i) {
+    gjx = g(n, m, A, b, x, i);
+    ax = 0;
+    for (j = 0; j < n; ++j) {
+      ax += A[i * n + j] * rX[j];
+    }
+    val += rho * (Math.abs(gjx + ax) - Math.abs(gjx));
+  }
+  return val;
+}
