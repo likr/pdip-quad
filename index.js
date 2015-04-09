@@ -191,57 +191,6 @@ module.exports = function pdipQuad(n, m) {
       x: x
     };
   }
-
-  function allocate(arg) {
-    var totalSize = 0;
-
-    totalSize += 8 * countLength(arg.Float64);
-    totalSize += 4 * countLength(arg.Uint32);
-
-    var heap = new ArrayBuffer(calcBufferSize(totalSize)),
-        views = {};
-    allocViews(arg.Uint32, 8 * allocViews(arg.Float64, 0, Float64Array), Uint32Array);
-
-    return {
-      heap: heap,
-      views: views
-    };
-
-    function countLength(obj) {
-      var length = 0;
-      for (var name in obj) {
-        if (typeof obj[name] === 'number') {
-          length += obj[name];
-        } else {
-          length += countLength(obj[name]);
-        }
-      }
-      return length;
-    }
-
-    function allocViews(obj, offset, TArray) {
-      var length, totalLength = 0;
-      for (var name in obj) {
-        if (typeof obj[name] === 'number') {
-          length = obj[name];
-        } else {
-          length = allocViews(obj[name], offset, TArray);
-        }
-        views[name] = new TArray(heap, offset, length);
-        offset += views[name].byteLength;
-        totalLength += length;
-      }
-      return totalLength;
-    }
-
-    function calcBufferSize(s) {
-      var l = 1;
-      while (l < s) {
-        l <<= 1;
-      }
-      return l;
-    }
-  }
 };
 
 function f(n, m, Q, c, x) {
@@ -303,4 +252,56 @@ function dp(n, m, A, b, c, Q, x, rX, mu, rho) {
     val += rho * (Math.abs(gjx + ax) - Math.abs(gjx));
   }
   return val;
+}
+
+function allocate(arg) {
+  'use strict';
+  var totalSize = 0;
+
+  totalSize += 8 * countLength(arg.Float64);
+  totalSize += 4 * countLength(arg.Uint32);
+
+  var heap = new ArrayBuffer(calcBufferSize(totalSize)),
+      views = {};
+  allocViews(arg.Uint32, 8 * allocViews(arg.Float64, 0, Float64Array), Uint32Array);
+
+  return {
+    heap: heap,
+    views: views
+  };
+
+  function countLength(obj) {
+    var length = 0;
+    for (var name in obj) {
+      if (typeof obj[name] === 'number') {
+        length += obj[name];
+      } else {
+        length += countLength(obj[name]);
+      }
+    }
+    return length;
+  }
+
+  function allocViews(obj, offset, TArray) {
+    var length, totalLength = 0;
+    for (var name in obj) {
+      if (typeof obj[name] === 'number') {
+        length = obj[name];
+      } else {
+        length = allocViews(obj[name], offset, TArray);
+      }
+      views[name] = new TArray(heap, offset, length);
+      offset += views[name].byteLength;
+      totalLength += length;
+    }
+    return totalLength;
+  }
+
+  function calcBufferSize(s) {
+    var l = 1;
+    while (l < s) {
+      l <<= 1;
+    }
+    return l;
+  }
 }
