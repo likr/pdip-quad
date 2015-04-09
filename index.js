@@ -3,6 +3,7 @@ var linalgModule = require('linalg-asm');
 module.exports = function pdipQuad(n, m) {
   'use strict';
 
+  var nm = n + m;
   var memory = allocate({
     Float64: {
       Q: n * n,
@@ -14,7 +15,7 @@ module.exports = function pdipQuad(n, m) {
         y: m,
         z: n
       },
-      J: m * m,
+      J: nm * nm,
       K: m * n,
       L: n * n,
       r: {
@@ -79,7 +80,6 @@ module.exports = function pdipQuad(n, m) {
         rZ = memory.views.rZ,
         work = memory.views.work,
         ipiv = memory.views.ipiv;
-
     var mu = options.mu || 0.8,
         muMin = options.muMin || 1e-10,
         gamma = options.gamma || 0.5,
@@ -88,6 +88,7 @@ module.exports = function pdipQuad(n, m) {
         tau = options.tau || 0.8,
         xi = options.xi || 0.9,
         err = options.err || 1e-12;
+    var reduce = options.reduce === undefined ? false : options.reduce;
 
     for (var loop = 0; mu > muMin; ++loop, mu *= gamma) {
       for (;;) {
@@ -132,34 +133,58 @@ module.exports = function pdipQuad(n, m) {
           break;
         }
 
-        // L := (Q + X^(-1) Z)^-1
-        for (i = 0; i < n; ++i) {
-          for (j = 0; j < n; ++j) {
-            L[i * n + j] = Q[i * n + j];
+        if (reduce) {
+          // L := (Q + X^(-1) Z)^-1
+          for (i = 0; i < n; ++i) {
+            for (j = 0; j < n; ++j) {
+              L[i * n + j] = Q[i * n + j];
+            }
+            L[i * n + i] += z[i] / x[i];
           }
-          L[i * n + i] += z[i] / x[i];
+          linalg.dgetrf(n, n, L.byteOffset, n, ipiv.byteOffset, n);
+          linalg.dgetri(n, L.byteOffset, n, ipiv.byteOffset, work.byteOffset, n);
+
+          // K := A L
+          linalg.dgemm(0, 0, m, n, n, 1, A.byteOffset, n, L.byteOffset, n, 0, K.byteOffset, n);
+
+          // J := K A^t
+          linalg.dgemm(0, 1, m, m, n, 1, K.byteOffset, n, A.byteOffset, n, 0, J.byteOffset, m);
+
+          // r_y := - r_y - K (r_x + X^(-1) r_z)
+          for (i = 0; i < n; ++i) {
+            work[i] = rX[i] + rZ[i] / x[i];
+          }
+          linalg.dgemv(0, m, n, -1, K.byteOffset, n, work.byteOffset, 1, -1, rY.byteOffset, 1);
+
+          // solve J dw = r
+          linalg.dgesv(m, 1, J.byteOffset, m, ipiv.byteOffset, rY.byteOffset, 1);
+
+          // dx := L (r_x + X^-1 r_z + A^t d_y)
+          linalg.dgemv(1, m, n, 1, A.byteOffset, n, rY.byteOffset, 1, 1, work.byteOffset, 1);
+          linalg.dgemv(0, n, n, 1, L.byteOffset, n, work.byteOffset, 1, 0, rX.byteOffset, 1);
+        } else {
+          // J := (  Q-X^(-1)Z  -A^t )
+          //        -A           O
+          // r_x := r_x - X ^ -1 r_z
+          for (i = 0; i < nm; ++i) {
+            for (j = 0; j < nm; ++j) {
+              J[i * nm + j] = 0;
+            }
+          }
+          for (i = 0; i < n; ++i) {
+            for (j = 0; j < n; ++j) {
+              J[i * nm + j] = Q[i * n + j];
+            }
+            for (j = 0; j < m; ++j) {
+              J[(j + n) * nm + i] = J[i * nm + j + n] = -A[j * n + i];
+            }
+            J[i * nm + i] += z[i] / x[i];
+            rX[i] += rZ[i] / x[i];
+          }
+
+          // solve J dw = r
+          linalg.dgesv(nm, 1, J.byteOffset, nm, ipiv.byteOffset, r.byteOffset, 1);
         }
-        linalg.dgetrf(n, n, L.byteOffset, n, ipiv.byteOffset, n);
-        linalg.dgetri(n, L.byteOffset, n, ipiv.byteOffset, work.byteOffset, n);
-
-        // K := A L
-        linalg.dgemm(0, 0, m, n, n, 1, A.byteOffset, n, L.byteOffset, n, 0, K.byteOffset, n);
-
-        // J := K A^t
-        linalg.dgemm(0, 1, m, m, n, 1, K.byteOffset, n, A.byteOffset, n, 0, J.byteOffset, m);
-
-        // r_y := - r_y - K (r_x + X^(-1) r_z)
-        for (i = 0; i < n; ++i) {
-          work[i] = rX[i] + rZ[i] / x[i];
-        }
-        linalg.dgemv(0, m, n, -1, K.byteOffset, n, work.byteOffset, 1, -1, rY.byteOffset, 1);
-
-        // solve J dw = r
-        linalg.dgesv(m, 1, J.byteOffset, m, ipiv.byteOffset, rY.byteOffset, 1);
-
-        // dx := L (r_x + X^-1 r_z + A^t d_y)
-        linalg.dgemv(1, m, n, 1, A.byteOffset, n, rY.byteOffset, 1, 1, work.byteOffset, 1);
-        linalg.dgemv(0, n, n, 1, L.byteOffset, n, work.byteOffset, 1, 0, rX.byteOffset, 1);
 
         // dz = X^-1 (Z dx - r_z)
         for (i = 0; i < n; ++i) {
