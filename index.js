@@ -329,7 +329,7 @@ function allocate(arg) {
   }
 
   function calcBufferSize(s) {
-    var l = 0x1000;
+    var l = 0x10000;
     while (l < s) {
       l <<= 1;
     }
